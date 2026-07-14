@@ -1,3 +1,12 @@
+<p align="center">
+  <a href="https://github.com/getmilpa">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/getmilpa/core/main/art/lockup/milpa-lockup-v-color-dark.svg">
+      <img src="https://raw.githubusercontent.com/getmilpa/core/main/art/lockup/milpa-lockup-v-color-light.svg" alt="Milpa" width="300">
+    </picture>
+  </a>
+</p>
+
 # Milpa Auth-WebAuthn
 
 > Passkey / WebAuthn for the Milpa PHP framework: the `WebAuthnVerifier`, `ChallengeStore` and
