@@ -1,6 +1,16 @@
 {
   "name": "milpa/auth-webauthn",
   "description": "Passkey / WebAuthn for the Milpa PHP framework: the WebAuthnVerifier, ChallengeStore and WebAuthnCredentialStore contracts, ceremony value objects, in-memory defaults, and a lbuchs adapter. A verified assertion mints a session \u2014 it is never a per-request transport. Zero framework, zero ORM.",
+  "keywords": [
+    "php",
+    "milpa",
+    "framework",
+    "webauthn",
+    "passkeys",
+    "fido2",
+    "authentication",
+    "security"
+  ],
   "type": "library",
   "license": "Apache-2.0",
   "authors": [
@@ -11,7 +21,7 @@
   ],
   "require": {
     "php": ">=8.3",
-    "milpa/auth": "^0.2",
+    "milpa/auth": "^0.3",
     "lbuchs/webauthn": "^2",
     "psr/http-message": "^1 || ^2",
     "ext-openssl": "*",
