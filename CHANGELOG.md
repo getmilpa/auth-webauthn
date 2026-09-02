@@ -25,6 +25,17 @@
 
 App imports of those FQCNs keep resolving — from `milpa/auth`.
 
+## [0.2.0](https://github.com/getmilpa/auth-webauthn/compare/v0.1.1...v0.2.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* ceremony types move to milpa/auth; this package keeps the adapter ([#6](https://github.com/getmilpa/auth-webauthn/issues/6))
+
+### Features
+
+* ceremony types move to milpa/auth; this package keeps the adapter ([#6](https://github.com/getmilpa/auth-webauthn/issues/6)) ([50e99e7](https://github.com/getmilpa/auth-webauthn/commit/50e99e72b9405be1ae17ed4dab1e2ecd335647e5))
+
 ## [0.1.1](https://github.com/getmilpa/auth-webauthn/compare/v0.1.0...v0.1.1) (2026-07-30)
 
 
