@@ -9,20 +9,19 @@
 
 # Milpa Auth-WebAuthn
 
-> Passkey / WebAuthn for the Milpa PHP framework: the `WebAuthnVerifier`, `ChallengeStore` and
-> `WebAuthnCredentialStore` contracts, ceremony value objects, in-memory defaults, and a
-> [lbuchs/webauthn](https://github.com/lbuchs/WebAuthn) adapter.
+> Passkey / WebAuthn adapter for the Milpa PHP framework: a
+> [lbuchs/webauthn](https://github.com/lbuchs/WebAuthn) implementation of `milpa/auth`'s
+> `WebAuthnVerifier`, plus in-memory challenge and credential stores.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![PHP](https://img.shields.io/badge/php-%E2%89%A5%208.3-777bb4.svg)](https://www.php.net/)
 
 **A verified WebAuthn assertion mints a session — it is never a per-request transport.**
 
-`milpa/auth-webauthn` sits one tier above [`milpa/auth`](https://github.com/getmilpa/auth): it
-consumes the identity vocabulary `milpa/auth` defines (`Actor`, `AuthContext`, `CredentialType::Passkey`)
-and adds what a WebAuthn/FIDO2 registration-and-authentication ceremony needs on top — the relying
-party, the ceremony type, the challenge lifecycle, and the credential store contracts a real
-authenticator adapter (`lbuchs/webauthn`) implements against. Zero framework, zero ORM.
+`milpa/auth-webauthn` sits one tier above [`milpa/auth`](https://github.com/getmilpa/auth):
+`milpa/auth` owns the ceremony vocabulary (`RelyingParty`, `Contracts\WebAuthnVerifier`, the
+assertion/registration value objects). This package implements that port with `lbuchs/webauthn`
+and ships in-memory stores for tests and zero-file consumers. Zero framework, zero ORM.
 
 ## Install
 
@@ -32,13 +31,14 @@ composer require milpa/auth-webauthn
 
 ## What this package is
 
-`milpa/auth-webauthn` is the contracts-plus-defaults layer for a WebAuthn/FIDO2 ceremony: the
-`WebAuthnVerifier` port a real authenticator adapter implements, the `ChallengeStore` and
-`WebAuthnCredentialStore` seams a host wires to its own storage, the ceremony value objects
-(`RelyingParty`, `CeremonyType`, the options/response/context shapes), in-memory reference
-implementations for tests and zero-file consumers, and a `lbuchs/webauthn`-backed adapter
-(`Adapter\LbuchsWebAuthnVerifier`) that does the actual cryptography. See
-[ADR 0001](docs/adr/0001-webauthn-mints-a-session.md) for the three decisions this shape commits to.
+`milpa/auth-webauthn` is the cryptography adapter for a WebAuthn/FIDO2 ceremony: a
+`lbuchs/webauthn`-backed `Adapter\LbuchsWebAuthnVerifier` that implements
+`Milpa\Auth\WebAuthn\Contracts\WebAuthnVerifier` (defined in `milpa/auth`), plus
+`InMemoryChallengeStore` and `InMemoryWebAuthnCredentialStore` as reference implementations
+for tests and zero-file consumers. See [ADR 0001](docs/adr/0001-webauthn-mints-a-session.md)
+for the three decisions this shape commits to. The ceremony types themselves
+(`RelyingParty`, `WebAuthnAuthenticationResponse`, `WebAuthnAssertionResult`, …) resolve
+from `milpa/auth`.
 
 **A verified assertion mints a session — it is never a per-request transport**, so `WebAuthnVerifier`
 is deliberately not a `Milpa\Auth\Contracts\CredentialVerifier`. `verifyAuthentication()` returns proof
@@ -119,7 +119,7 @@ same contract for that guarantee.
 ## Requirements
 
 - PHP **≥ 8.3**
-- `milpa/auth` (the identity vocabulary this package builds on)
+- `milpa/auth` `^0.9` (ceremony types, contracts, and the identity vocabulary)
 - `lbuchs/webauthn` `^2` (the shipped cryptography adapter)
 - `psr/http-message` (the `RelyingPartyResolver` seam)
 - `ext-openssl`, `ext-mbstring`, `ext-sodium`

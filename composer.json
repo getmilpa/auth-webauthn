@@ -1,6 +1,6 @@
 {
   "name": "milpa/auth-webauthn",
-  "description": "Passkey / WebAuthn for the Milpa PHP framework: the WebAuthnVerifier, ChallengeStore and WebAuthnCredentialStore contracts, ceremony value objects, in-memory defaults, and a lbuchs adapter. A verified assertion mints a session \u2014 it is never a per-request transport. Zero framework, zero ORM.",
+  "description": "Passkey / WebAuthn adapter for the Milpa PHP framework: the lbuchs/webauthn implementation of milpa/auth's WebAuthnVerifier, plus in-memory challenge and credential stores. Ceremony types and contracts live in milpa/auth. A verified assertion mints a session \u2014 it is never a per-request transport. Zero framework, zero ORM.",
   "keywords": [
     "php",
     "milpa",
@@ -21,7 +21,7 @@
   ],
   "require": {
     "php": ">=8.3",
-    "milpa/auth": "^0.3",
+    "milpa/auth": "^0.9",
     "lbuchs/webauthn": "^2",
     "psr/http-message": "^1 || ^2",
     "ext-openssl": "*",
@@ -37,8 +37,12 @@
   },
   "autoload": {
     "psr-4": {
-      "Milpa\\Auth\\WebAuthn\\": "src/"
-    }
+      "Milpa\\Auth\\WebAuthn\\Adapter\\": "src/Adapter/"
+    },
+    "classmap": [
+      "src/InMemoryChallengeStore.php",
+      "src/InMemoryWebAuthnCredentialStore.php"
+    ]
   },
   "autoload-dev": {
     "psr-4": {
