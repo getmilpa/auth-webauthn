@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — 0.2.0 (intent)
+
+### Breaking
+
+* `milpa/auth` is now the authority for `Milpa\Auth\WebAuthn\*` ceremony types and contracts.
+  This package keeps only `Adapter\LbuchsWebAuthnVerifier` and the in-memory stores
+  (`InMemoryChallengeStore`, `InMemoryWebAuthnCredentialStore`).
+* Require `milpa/auth: ^0.9` (was `^0.3`). Composer `^0.3` could not install auth 0.4+,
+  which already shipped a parallel `src/WebAuthn/` tree; bumping the range without moving
+  the types would leave two packages claiming the same PSR-4 prefix. Auth 0.8.0 does **not**
+  contain `RelyingParty` / `WebAuthnVerifier` / `WebAuthnAssertionResult` /
+  `WebAuthnAuthenticationResponse` — those land in auth 0.9 with this split, so the
+  constraint is `^0.9`, not `^0.8` (`^0.8` would exclude 0.9 and still resolve 0.8.0).
+
+### Moved to milpa/auth
+
+* `RelyingParty`, `CeremonyType`, `ChallengeRecord`
+* `Contracts\WebAuthnVerifier`, `Contracts\ChallengeStore`, `Contracts\WebAuthnCredentialStore`, `Contracts\RelyingPartyResolver`
+* `WebAuthnAssertionResult`, `WebAuthnAuthenticationResponse`, `WebAuthnAuthenticationContext`
+* `WebAuthnRegistrationResponse`, `WebAuthnRegistrationContext`, `WebAuthnCredentialRecord`
+* `PublicKeyCredentialCreationOptions`, `PublicKeyCredentialRequestOptions`
+* `Exceptions\WebAuthnCeremonyException`
+
+App imports of those FQCNs keep resolving — from `milpa/auth`.
+
 ## [0.1.1](https://github.com/getmilpa/auth-webauthn/compare/v0.1.0...v0.1.1) (2026-07-30)
 
 
