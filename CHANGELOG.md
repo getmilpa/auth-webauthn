@@ -25,6 +25,13 @@
 
 App imports of those FQCNs keep resolving — from `milpa/auth`.
 
+## [0.2.1](https://github.com/getmilpa/auth-webauthn/compare/v0.2.0...v0.2.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* admit every minor of milpa/auth, not just 0.9 ([#8](https://github.com/getmilpa/auth-webauthn/issues/8)) ([306af7b](https://github.com/getmilpa/auth-webauthn/commit/306af7b3a4376aab9b0114aba40259bfd10e3605))
+
 ## [0.2.0](https://github.com/getmilpa/auth-webauthn/compare/v0.1.1...v0.2.0) (2026-09-02)
 
 
