@@ -27,6 +27,7 @@ use Milpa\Auth\WebAuthn\Exceptions\WebAuthnCeremonyException;
 use Milpa\Auth\WebAuthn\PublicKeyCredentialCreationOptions;
 use Milpa\Auth\WebAuthn\PublicKeyCredentialRequestOptions;
 use Milpa\Auth\WebAuthn\RelyingParty;
+use Milpa\Auth\WebAuthn\UserVerificationRequirement;
 use Milpa\Auth\WebAuthn\WebAuthnAssertionResult;
 use Milpa\Auth\WebAuthn\WebAuthnAuthenticationContext;
 use Milpa\Auth\WebAuthn\WebAuthnAuthenticationResponse;
@@ -41,6 +42,20 @@ use Milpa\Auth\WebAuthn\WebAuthnRegistrationResponse;
  * fresh `lbuchs\WebAuthn\WebAuthn` is built per ceremony from the resolved {@see RelyingParty} (lbuchs
  * takes a static rpId, so it cannot be shared across tenants). Attestation is fixed to `'none'`: this leaf
  * proves possession of a key bound to the RP, not the authenticator's provenance.
+ *
+ * User verification is REQUIRED by default, as in milpa/auth's own verifiers: a ceremony whose
+ * authenticatorData lacks the UV flag proves someone touched the authenticator, not who. The options this
+ * adapter emits advertise `userVerification: 'required'` so the browser asks for it; a house that admits
+ * authenticators without a PIN or biometric passes {@see UserVerificationRequirement::Preferred} or
+ * `::Discouraged` to the constructor, explicitly — it is never inferred from the request context.
+ *
+ * Which WebAuthn L2 check is made where (§7.1 registration, §7.2 assertion):
+ *  - here: the challenge is one this adapter issued, unexpired, unused and for this ceremony; the origin is
+ *    one of {@see RelyingParty::$allowedOrigins} (exact string); the credential is known, belongs to the
+ *    actor the challenge was issued for, and matches the userHandle; a new credential id is not already
+ *    registered; the signature counter (as a signal, see below).
+ *  - in lbuchs: clientData `type`, challenge, origin (against the rpId), rpIdHash, UP, UV, the attestation
+ *    format and the signature.
  *
  * Two deliberate design points, both load-bearing:
  *  - The shipped response value objects carry no opaque challenge-id, so the ONLY value the browser
@@ -69,15 +84,19 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
     private $nonceFactory;
 
     /**
-     * @param callable(): \DateTimeImmutable|null $clock     defaults to a real "now"
-     * @param callable(): string|null             $idFactory the per-ceremony challenge nonce source
-     *                                                       (default: `bin2hex(random_bytes(16))`)
+     * @param callable(): \DateTimeImmutable|null $clock            defaults to a real "now"
+     * @param callable(): string|null             $idFactory        the per-ceremony challenge nonce source
+     *                                                              (default: `bin2hex(random_bytes(16))`)
+     * @param UserVerificationRequirement         $userVerification `Required` by default; relax it only on
+     *                                                              purpose, for a house that admits
+     *                                                              authenticators without a PIN or biometric
      */
     public function __construct(
         private readonly ChallengeStore $challenges,
         private readonly WebAuthnCredentialStore $credentials,
         ?callable $clock = null,
         ?callable $idFactory = null,
+        private readonly UserVerificationRequirement $userVerification = UserVerificationRequirement::Required,
     ) {
         $this->clock = $clock ?? static fn (): \DateTimeImmutable => new \DateTimeImmutable();
         $this->nonceFactory = $idFactory ?? static fn (): string => bin2hex(random_bytes(16));
@@ -100,7 +119,7 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
             $context->userDisplayName,
             self::CEREMONY_TIMEOUT_SECONDS,
             'preferred',
-            $context->userVerification,
+            $this->advertisedUserVerification($context->userVerification),
             null,
             $excludeIds,
         );
@@ -117,7 +136,8 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
 
     /**
      * Finish registration: consume the challenge, enforce the origin allowlist, let lbuchs verify the
-     * `'none'` attestation, and return the {@see WebAuthnCredentialRecord} for the host to persist.
+     * `'none'` attestation (and the UV flag unless relaxed), refuse a credential id that is already
+     * registered, and return the {@see WebAuthnCredentialRecord} for the host to persist.
      */
     public function verifyRegistration(WebAuthnRegistrationResponse $response, RelyingParty $rp): WebAuthnCredentialRecord
     {
@@ -135,7 +155,7 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
                 $response->clientDataJSON,
                 $response->attestationObject,
                 $record->value(),
-                false, // requireUserVerification — the host raises this via policy, not the leaf
+                $this->userVerification->demandsVerification(),
                 true,  // requireUserPresent
                 false, // failIfRootMismatch — 'none' carries no chain to a root
             );
@@ -143,8 +163,15 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
             throw WebAuthnCeremonyException::rejected('attestation');
         }
 
+        // §7.1 step 22: a credential id already on file is never registered a second time — whether it is
+        // another actor's (a hijack) or this actor's own (a replayed attestation).
+        $credentialId = self::base64UrlEncode((string) $data->credentialId);
+        if ($this->credentials->findByCredentialId($credentialId) !== null) {
+            throw WebAuthnCeremonyException::rejected('credential already registered');
+        }
+
         return new WebAuthnCredentialRecord(
-            self::base64UrlEncode((string) $data->credentialId),
+            $credentialId,
             (string) $data->credentialPublicKey,
             $webAuthn->getSignatureCounter() ?? 0,
             $record->actorId,
@@ -177,7 +204,7 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
             true,
             true,
             true,
-            $context->userVerification,
+            $this->advertisedUserVerification($context->userVerification),
         );
 
         $nonce = ($this->nonceFactory)();
@@ -192,7 +219,8 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
 
     /**
      * Finish authentication: consume the challenge, enforce the origin allowlist, resolve the credential,
-     * check the user-handle binding, let lbuchs verify the assertion signature, and return the proof. The
+     * require it to belong to the actor the challenge was issued for (§7.2 step 6), check the user-handle
+     * binding, let lbuchs verify the assertion (signature, UP, and UV unless relaxed), and return the proof. The
      * signature counter is reported as a clone SIGNAL — never used to reject (see the class doc).
      */
     public function verifyAuthentication(WebAuthnAuthenticationResponse $response, RelyingParty $rp): WebAuthnAssertionResult
@@ -204,6 +232,12 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
         $stored = $this->credentials->findByCredentialId($response->credentialId);
         if ($stored === null) {
             throw WebAuthnCeremonyException::rejected('unknown credential');
+        }
+
+        // A challenge issued for a known actor listed only that actor's credentials; another actor's
+        // credential answering it would let a step-up for one person be satisfied by someone else.
+        if ($record->actorId !== null && $record->actorId !== $stored->actorId) {
+            throw WebAuthnCeremonyException::rejected('credential not allowed');
         }
 
         if ($response->userHandle !== null && $response->userHandle !== $stored->actorId) {
@@ -219,7 +253,7 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
                 $stored->publicKeyCose,
                 $record->value(),
                 null,  // prevSignatureCnt = null: the counter is our SIGNAL, not a gate lbuchs throws on
-                false, // requireUserVerification
+                $this->userVerification->demandsVerification(),
                 true,  // requireUserPresent
             );
         } catch (WebAuthnException) {
@@ -278,10 +312,26 @@ final class LbuchsWebAuthnVerifier implements WebAuthnVerifier
         return $record;
     }
 
-    /** Belt-and-suspenders exact-string origin check on top of lbuchs's rpId derivation. */
+    /**
+     * The `userVerification` the browser is asked for: `'required'` whenever this verifier demands UV (a
+     * weaker request would only make the browser skip a check the server then refuses the ceremony for);
+     * otherwise the host's requested value, unchanged.
+     */
+    private function advertisedUserVerification(string $requested): string
+    {
+        return $this->userVerification->demandsVerification()
+            ? UserVerificationRequirement::Required->value
+            : $requested;
+    }
+
+    /**
+     * The exact-string origin check against the RP's allowlist. lbuchs only checks that the origin's host
+     * falls under the rpId, which would admit any subdomain; this is what holds a ceremony to the pages
+     * the RP actually serves it from.
+     */
     private function assertOriginAllowed(string $origin, RelyingParty $rp): void
     {
-        if (!in_array($origin, $rp->allowedOrigins, true)) {
+        if (!$rp->allowsOrigin($origin)) {
             throw WebAuthnCeremonyException::rejected('origin');
         }
     }
