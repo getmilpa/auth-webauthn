@@ -19,9 +19,15 @@
       "homepage": "https://x.com/rodrigoteamx"
     }
   ],
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/getmilpa/auth"
+    }
+  ],
   "require": {
     "php": ">=8.3",
-    "milpa/auth": ">=0.9 <1.0",
+    "milpa/auth": "dev-main as 0.11.0",
     "lbuchs/webauthn": "^2",
     "psr/http-message": "^1 || ^2",
     "ext-openssl": "*",
