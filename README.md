@@ -87,6 +87,31 @@ Registration is the mirror image: `createRegistrationOptions(Actor, RelyingParty
 issues a challenge and creation options; `verifyRegistration(WebAuthnRegistrationResponse, RelyingParty)`
 verifies the (`'none'`) attestation and returns a `WebAuthnCredentialRecord` for the host to `save()`.
 
+## What a ceremony is held to
+
+**User verification is required by default.** An authenticator that was only touched (UP) and never
+checked who was holding it (UV — a PIN or biometric) is refused, at registration and at login, and
+the options ask the browser for `userVerification: 'required'`. A house that admits authenticators
+without UV on purpose says so where it builds the verifier:
+
+```php
+use Milpa\Auth\WebAuthn\UserVerificationRequirement;
+
+$verifier = new LbuchsWebAuthnVerifier($challengeStore, $credentialStore,
+    userVerification: UserVerificationRequirement::Preferred);
+```
+
+Every other WebAuthn L2 check (§7.1, §7.2) is made fail-closed, here or in lbuchs:
+
+| Check | Where |
+|---|---|
+| challenge issued here, unexpired, single-use, for this ceremony | adapter (`ChallengeStore`) |
+| `origin` is one of `RelyingParty::$allowedOrigins`, exact string | adapter — lbuchs alone would admit any subdomain of the rpId |
+| credential known, owned by the actor the challenge was for, matching `userHandle` | adapter |
+| a new credential id is not already registered | adapter |
+| clientData `type`, challenge, rpIdHash, UP, UV, signature | lbuchs |
+| signature counter | adapter — a clone *signal* (`cloneWarning`), never a rejection |
+
 ## The three seams a host implements
 
 | Contract | Its one job |
@@ -119,7 +144,7 @@ same contract for that guarantee.
 ## Requirements
 
 - PHP **≥ 8.3**
-- `milpa/auth` `^0.9` (ceremony types, contracts, and the identity vocabulary)
+- `milpa/auth` `>=0.11 <1.0` (ceremony types, contracts, and the identity vocabulary)
 - `lbuchs/webauthn` `^2` (the shipped cryptography adapter)
 - `psr/http-message` (the `RelyingPartyResolver` seam)
 - `ext-openssl`, `ext-mbstring`, `ext-sodium`

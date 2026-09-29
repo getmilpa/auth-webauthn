@@ -1,6 +1,36 @@
 # Changelog
 
-## Unreleased — 0.2.0 (intent)
+## Unreleased — 0.3.0 (intent)
+
+Ships together with `milpa/auth` 0.11.0, and not before it: this release needs
+`UserVerificationRequirement` and `RelyingParty::allowsOrigin()`, which land there.
+
+### ⚠ BREAKING CHANGES
+
+* `LbuchsWebAuthnVerifier` requires user verification by default. It handed lbuchs
+  `requireUserVerification=false`, so a registration or an assertion whose authenticatorData
+  lacked the UV flag was accepted: an authenticator that was touched but never checked who held
+  it. The constructor takes a fifth argument, `UserVerificationRequirement $userVerification =
+  Required`; `::Preferred` or `::Discouraged` relaxes it, only when passed explicitly.
+* The creation and request options ask the browser for `userVerification: 'required'` whenever
+  the verifier demands it, whatever the context asked for; a relaxed verifier advertises the
+  context's value unchanged.
+* An assertion whose credential belongs to an actor other than the one the challenge was issued
+  for is refused (`credential not allowed`) — WebAuthn L2 §7.2 step 6. Before, it succeeded for
+  the other actor when the browser sent no userHandle.
+* A registration whose credential id is already in the store is refused
+  (`credential already registered`) — §7.1 step 22.
+* Requires `milpa/auth` `>=0.11 <1.0` (was `>=0.9 <1.0`).
+
+### Tests
+
+* `LbuchsWebAuthnVerifierCeremonyChecksTest` walks the §7.1/§7.2 checks one at a time through real
+  crypto: UV, UP, clientData `type`, origin against the allowlist (a subdomain lbuchs alone would
+  admit), rpIdHash, credential ownership and re-registration.
+
+See [UPGRADING.md](UPGRADING.md).
+
+## 0.2.0 — migration notes
 
 ### Breaking
 

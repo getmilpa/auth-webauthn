@@ -22,6 +22,7 @@ use Milpa\Auth\WebAuthn\InMemoryChallengeStore;
 use Milpa\Auth\WebAuthn\InMemoryWebAuthnCredentialStore;
 use Milpa\Auth\WebAuthn\RelyingParty;
 use Milpa\Auth\WebAuthn\Tests\Support\TestAuthenticator;
+use Milpa\Auth\WebAuthn\UserVerificationRequirement;
 use Milpa\Auth\WebAuthn\WebAuthnAuthenticationContext;
 use Milpa\Auth\WebAuthn\WebAuthnAuthenticationResponse;
 use Milpa\Auth\WebAuthn\WebAuthnCredentialRecord;
@@ -59,6 +60,197 @@ final class LbuchsWebAuthnVerifierCeremonyChecksTest extends TestCase
         $this->registerWith($adapter, $authenticator, $this->rp(), 'reg-no-uv', flags: TestAuthenticator::FLAG_UP);
     }
 
+    public function testUserVerifiedCeremoniesPassByDefault(): void
+    {
+        [$adapter, $authenticator, $rp] = $this->registered(['reg-uv', 'auth-uv']);
+
+        $result = $this->assertWith($adapter, $authenticator, $rp, 'auth-uv');
+
+        self::assertSame('actor-1', $result->actorId);
+    }
+
+    public function testAnExplicitlyRelaxedVerifierAcceptsPresenceAlone(): void
+    {
+        foreach ([UserVerificationRequirement::Preferred, UserVerificationRequirement::Discouraged] as $relaxed) {
+            $credentials = new InMemoryWebAuthnCredentialStore();
+            $adapter = $this->adapter(['reg-relaxed', 'auth-relaxed'], $credentials, $relaxed);
+            $authenticator = new TestAuthenticator();
+            $rp = $this->rp();
+
+            $credentials->save($this->registerWith($adapter, $authenticator, $rp, 'reg-relaxed', flags: TestAuthenticator::FLAG_UP));
+            $result = $this->assertWith($adapter, $authenticator, $rp, 'auth-relaxed', flags: TestAuthenticator::FLAG_UP);
+
+            self::assertSame('actor-1', $result->actorId, $relaxed->value);
+        }
+    }
+
+    public function testOptionsAskTheBrowserForUserVerificationByDefault(): void
+    {
+        $adapter = $this->adapter(['reg-options', 'auth-options']);
+
+        // The contexts default to 'preferred'; a verifier that demands UV must not advertise less.
+        $creation = $adapter->createRegistrationOptions(
+            new Actor('actor-1', ActorType::User),
+            $this->rp(),
+            new WebAuthnRegistrationContext('actor-1', 'user@acme.example', 'Ada'),
+        )->toArray()['publicKey'];
+        $request = $adapter->createAuthenticationOptions($this->rp(), new WebAuthnAuthenticationContext('actor-1'))->toArray()['publicKey'];
+
+        self::assertIsArray($creation);
+        self::assertIsArray($request);
+        $selection = $creation['authenticatorSelection'] ?? null;
+        self::assertInstanceOf(\stdClass::class, $selection);
+        self::assertSame('required', $selection->userVerification ?? null);
+        self::assertSame('required', $request['userVerification'] ?? null);
+    }
+
+    public function testARelaxedVerifierAdvertisesWhatTheHostAskedFor(): void
+    {
+        $adapter = $this->adapter(['reg-options', 'auth-options'], null, UserVerificationRequirement::Preferred);
+
+        $creation = $adapter->createRegistrationOptions(
+            new Actor('actor-1', ActorType::User),
+            $this->rp(),
+            new WebAuthnRegistrationContext('actor-1', 'user@acme.example', 'Ada', 'discouraged'),
+        )->toArray()['publicKey'];
+        $request = $adapter->createAuthenticationOptions($this->rp(), new WebAuthnAuthenticationContext('actor-1', 'preferred'))->toArray()['publicKey'];
+
+        self::assertIsArray($creation);
+        self::assertIsArray($request);
+        $selection = $creation['authenticatorSelection'] ?? null;
+        self::assertInstanceOf(\stdClass::class, $selection);
+        self::assertSame('discouraged', $selection->userVerification ?? null);
+        self::assertSame('preferred', $request['userVerification'] ?? null);
+    }
+
+    // ---------------------------------------------------------------------
+    // User presence (§7.1 step 14, §7.2 step 16) — made by lbuchs
+    // ---------------------------------------------------------------------
+
+    public function testAssertionWithoutUserPresenceIsRejected(): void
+    {
+        [$adapter, $authenticator, $rp] = $this->registered(['reg-no-up', 'auth-no-up']);
+
+        $this->expectCeremonyRejected('assertion');
+        $this->assertWith($adapter, $authenticator, $rp, 'auth-no-up', flags: TestAuthenticator::FLAG_UV);
+    }
+
+    public function testRegistrationWithoutUserPresenceIsRejected(): void
+    {
+        $this->expectCeremonyRejected('attestation');
+        $this->registerWith($this->adapter(['reg-no-up']), new TestAuthenticator(), $this->rp(), 'reg-no-up', flags: TestAuthenticator::FLAG_UV);
+    }
+
+    // ---------------------------------------------------------------------
+    // clientData type (§7.1 step 7, §7.2 step 11) — made by lbuchs
+    // ---------------------------------------------------------------------
+
+    public function testAssertionWithACreateTypeIsRejected(): void
+    {
+        [$adapter, $authenticator, $rp] = $this->registered(['reg-type', 'auth-type']);
+
+        // Signed correctly over a clientDataJSON that says it is a registration.
+        $this->expectCeremonyRejected('assertion');
+        $this->assertWith($adapter, $authenticator, $rp, 'auth-type', type: 'webauthn.create');
+    }
+
+    public function testRegistrationWithAGetTypeIsRejected(): void
+    {
+        $this->expectCeremonyRejected('attestation');
+        $this->registerWith($this->adapter(['reg-type']), new TestAuthenticator(), $this->rp(), 'reg-type', type: 'webauthn.get');
+    }
+
+    // ---------------------------------------------------------------------
+    // Origin (§7.1 step 9, §7.2 step 13) — the RP's allowlist, not just the rpId
+    // ---------------------------------------------------------------------
+
+    public function testAssertionFromASubdomainOffTheAllowlistIsRejected(): void
+    {
+        [$adapter, $authenticator, $rp] = $this->registered(['reg-sub', 'auth-sub']);
+
+        // lbuchs alone would accept this: its host ends with the rpId. The RP never listed it.
+        $this->expectCeremonyRejected('origin');
+        $this->assertWith($adapter, $authenticator, $rp, 'auth-sub', origin: 'https://evil.acme.example');
+    }
+
+    public function testRegistrationFromASubdomainOffTheAllowlistIsRejected(): void
+    {
+        $this->expectCeremonyRejected('origin');
+        $this->registerWith($this->adapter(['reg-sub']), new TestAuthenticator(), $this->rp(), 'reg-sub', origin: 'https://evil.acme.example');
+    }
+
+    public function testEveryListedOriginIsAccepted(): void
+    {
+        $rp = new RelyingParty('acme.example', 'ACME Corp', [self::ORIGIN, 'https://login.acme.example']);
+        $credentials = new InMemoryWebAuthnCredentialStore();
+        $adapter = $this->adapter(['reg-listed', 'auth-listed'], $credentials);
+        $authenticator = new TestAuthenticator();
+
+        $credentials->save($this->registerWith($adapter, $authenticator, $rp, 'reg-listed', origin: 'https://login.acme.example'));
+        $result = $this->assertWith($adapter, $authenticator, $rp, 'auth-listed', origin: 'https://login.acme.example');
+
+        self::assertSame('actor-1', $result->actorId);
+    }
+
+    // ---------------------------------------------------------------------
+    // rpIdHash (§7.1 step 13) — made by lbuchs; the assertion side is in the integration test
+    // ---------------------------------------------------------------------
+
+    public function testRegistrationForAnotherRpIdIsRejected(): void
+    {
+        $this->expectCeremonyRejected('attestation');
+        $this->registerWith($this->adapter(['reg-rpid']), new TestAuthenticator(), $this->rp(), 'reg-rpid', authenticatorRpId: 'evil-rp.example');
+    }
+
+    // ---------------------------------------------------------------------
+    // Credential ownership (§7.1 step 22, §7.2 step 6)
+    // ---------------------------------------------------------------------
+
+    public function testAnotherActorsCredentialCannotAnswerAChallengeIssuedForThisActor(): void
+    {
+        [$adapter, $authenticator, $rp] = $this->registered(['reg-owner', 'auth-owner']);
+
+        // A genuine, UV'd assertion from actor-1's credential — but the challenge was issued for actor-2,
+        // and the browser sent no userHandle to catch it.
+        $adapter->createAuthenticationOptions($rp, new WebAuthnAuthenticationContext('actor-2'));
+        $authData = $authenticator->assertionAuthData($rp->id, 1);
+        $clientDataJSON = $authenticator->clientDataJSON('webauthn.get', 'auth-owner', self::ORIGIN);
+
+        $this->expectCeremonyRejected('credential not allowed');
+        $adapter->verifyAuthentication(
+            new WebAuthnAuthenticationResponse($authenticator->credentialIdBase64Url(), $clientDataJSON, $authData, $authenticator->sign($authData, $clientDataJSON), null),
+            $rp,
+        );
+    }
+
+    public function testADiscoverableChallengeAcceptsAnyKnownCredential(): void
+    {
+        [$adapter, $authenticator, $rp] = $this->registered(['reg-disc', 'auth-disc']);
+
+        $adapter->createAuthenticationOptions($rp, new WebAuthnAuthenticationContext(null));
+        $authData = $authenticator->assertionAuthData($rp->id, 1);
+        $clientDataJSON = $authenticator->clientDataJSON('webauthn.get', 'auth-disc', self::ORIGIN);
+
+        $result = $adapter->verifyAuthentication(
+            new WebAuthnAuthenticationResponse($authenticator->credentialIdBase64Url(), $clientDataJSON, $authData, $authenticator->sign($authData, $clientDataJSON), 'actor-1'),
+            $rp,
+        );
+
+        self::assertSame('actor-1', $result->actorId);
+    }
+
+    public function testACredentialIdAlreadyRegisteredIsNotRegisteredAgain(): void
+    {
+        $credentials = new InMemoryWebAuthnCredentialStore();
+        $adapter = $this->adapter(['reg-first', 'reg-again'], $credentials);
+        $authenticator = new TestAuthenticator();
+
+        $credentials->save($this->registerWith($adapter, $authenticator, $this->rp(), 'reg-first'));
+
+        $this->expectCeremonyRejected('credential already registered');
+        $this->registerWith($adapter, $authenticator, $this->rp(), 'reg-again');
+    }
+
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
@@ -73,8 +265,11 @@ final class LbuchsWebAuthnVerifierCeremonyChecksTest extends TestCase
      *
      * @param list<string> $nonces
      */
-    private function adapter(array $nonces, ?InMemoryWebAuthnCredentialStore $credentials = null): LbuchsWebAuthnVerifier
-    {
+    private function adapter(
+        array $nonces,
+        ?InMemoryWebAuthnCredentialStore $credentials = null,
+        UserVerificationRequirement $userVerification = UserVerificationRequirement::Required,
+    ): LbuchsWebAuthnVerifier {
         $index = 0;
 
         return new LbuchsWebAuthnVerifier(
@@ -87,6 +282,7 @@ final class LbuchsWebAuthnVerifierCeremonyChecksTest extends TestCase
 
                 return $nonce;
             },
+            $userVerification,
         );
     }
 

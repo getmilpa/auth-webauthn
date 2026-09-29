@@ -89,7 +89,7 @@ final class TestAuthenticator
      * A complete CBOR attestation object (fmt `'none'`) whose authData embeds the real COSE public key.
      * Feed this straight to `verifyRegistration` / lbuchs `processCreate`.
      */
-    public function attestationObject(string $rpId, int $signCount = 0, int $flags = self::FLAG_UP): string
+    public function attestationObject(string $rpId, int $signCount = 0, int $flags = self::FLAG_UP | self::FLAG_UV): string
     {
         $authData = $this->registrationAuthData($rpId, $signCount, $flags);
 
@@ -101,7 +101,7 @@ final class TestAuthenticator
     }
 
     /** The authenticatorData for an assertion (rpIdHash + flags + 32-bit counter, no attested data). */
-    public function assertionAuthData(string $rpId, int $signCount, int $flags = self::FLAG_UP): string
+    public function assertionAuthData(string $rpId, int $signCount, int $flags = self::FLAG_UP | self::FLAG_UV): string
     {
         return hash('sha256', $rpId, true)
             . chr($flags)
