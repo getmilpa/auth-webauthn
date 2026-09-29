@@ -24,6 +24,15 @@ namespace Milpa\Auth\WebAuthn\Tests\Support;
  */
 final class TestAuthenticator
 {
+    /** authenticatorData flag bit 0: user present. */
+    public const FLAG_UP = 0x01;
+
+    /** authenticatorData flag bit 2: user verified. */
+    public const FLAG_UV = 0x04;
+
+    /** authenticatorData flag bit 6: attested credential data included. */
+    private const FLAG_AT = 0x40;
+
     private \OpenSSLAsymmetricKey $privateKey;
 
     /** 32-byte big-endian P-256 public X coordinate. */
@@ -80,9 +89,9 @@ final class TestAuthenticator
      * A complete CBOR attestation object (fmt `'none'`) whose authData embeds the real COSE public key.
      * Feed this straight to `verifyRegistration` / lbuchs `processCreate`.
      */
-    public function attestationObject(string $rpId, int $signCount = 0): string
+    public function attestationObject(string $rpId, int $signCount = 0, int $flags = self::FLAG_UP): string
     {
-        $authData = $this->registrationAuthData($rpId, $signCount);
+        $authData = $this->registrationAuthData($rpId, $signCount, $flags);
 
         return self::cborMap([
             [self::cborText('fmt'), self::cborText('none')],
@@ -91,11 +100,11 @@ final class TestAuthenticator
         ]);
     }
 
-    /** The authenticatorData for an assertion (rpIdHash + UP flag + 32-bit counter, no attested data). */
-    public function assertionAuthData(string $rpId, int $signCount): string
+    /** The authenticatorData for an assertion (rpIdHash + flags + 32-bit counter, no attested data). */
+    public function assertionAuthData(string $rpId, int $signCount, int $flags = self::FLAG_UP): string
     {
         return hash('sha256', $rpId, true)
-            . chr(0x01)          // UP
+            . chr($flags)
             . pack('N', $signCount);
     }
 
@@ -122,8 +131,8 @@ final class TestAuthenticator
         return $signature;
     }
 
-    /** The registration authenticatorData: rpIdHash + (UP|AT) flags + counter + attested credential data. */
-    private function registrationAuthData(string $rpId, int $signCount): string
+    /** The registration authenticatorData: rpIdHash + flags (always with AT) + counter + attested credential data. */
+    private function registrationAuthData(string $rpId, int $signCount, int $flags): string
     {
         $attestedCredentialData = $this->aaguidRaw
             . pack('n', strlen($this->credentialIdRaw))
@@ -131,7 +140,7 @@ final class TestAuthenticator
             . $this->coseKey();
 
         return hash('sha256', $rpId, true)
-            . chr(0x01 | 0x40)   // UP | AT (attested credential data included)
+            . chr($flags | self::FLAG_AT)
             . pack('N', $signCount)
             . $attestedCredentialData;
     }
