@@ -2,7 +2,7 @@
 
 ## Unreleased — 0.3.0 (intent)
 
-Ships together with `milpa/auth` 0.11.0, and not before it: this release needs
+Needs `milpa/auth` 0.11.0 (published 2026-09-29): this release uses
 `UserVerificationRequirement` and `RelyingParty::allowsOrigin()`, which land there.
 
 ### ⚠ BREAKING CHANGES
