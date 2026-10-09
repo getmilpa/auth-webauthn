@@ -30,6 +30,17 @@ Needs `milpa/auth` 0.11.0 (published 2026-09-29): this release uses
 
 See [UPGRADING.md](UPGRADING.md).
 
+## [0.3.0](https://github.com/getmilpa/auth-webauthn/compare/v0.2.1...v0.3.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* ceremonies without UV are refused unless the verifier is built with UserVerificationRequirement::Preferred or ::Discouraged; a foreign credential answering an actor's challenge and a re-registered credential id are refused; requires milpa/auth >=0.11. See UPGRADING.md.
+
+### Bug Fixes
+
+* a passkey ceremony needs a verified user, and a challenge its own actor ([#10](https://github.com/getmilpa/auth-webauthn/issues/10)) ([c926178](https://github.com/getmilpa/auth-webauthn/commit/c92617802e13e1d65a46b0bdbb7c79c6a853898f))
+
 ## 0.2.0 — migration notes
 
 ### Breaking
